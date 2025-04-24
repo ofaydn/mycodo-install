@@ -1,0 +1,40 @@
+#!/bin/bash
+
+INSTALL_DIRECTORY=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd -P )
+
+if [ "$EUID" -eq 0 ]; then
+    printf "Do not run as root. Run as non-root user: \"/bin/bash %s/install\"\n" "${INSTALL_DIRECTORY}"
+    exit 1
+fi
+
+if [ -d /opt/Mycodo ]; then
+    printf "## Error: Install aborted. Cause: The /opt/Mycodo directory already exists. The install cannot continue because a previous Mycodo install was detected. Please either move or delete the /opt/Mycodo directory and rerun this script to initiate the install or run /opt/Mycodo/install/setup.sh.\n"
+    exit 1
+fi
+
+if [ -f "${INSTALL_DIRECTORY}/.env" ]; then
+    export $(grep -v '^#' "${INSTALL_DIRECTORY}/.env" | xargs)
+fi
+
+if [[ -z "$GITHUB_FARMMODULES_TOKEN" ]]; then
+    echo "Error: GITHUB_FARMMODULES_TOKEN is not set in .env. Aborting."
+    exit 1
+fi
+
+sudo apt update
+sudo apt install -y jq dialog python3 wget curl
+
+sudo mkdir -p /opt/Mycodo
+sudo chown -R ${USER}: /opt/Mycodo
+cd /opt
+
+curl -s -H "Authorization: token $GITHUB_FARMMODULES_TOKEN" \
+     https://api.github.com/repos/FarmModules/custom-mycodo/releases/latest | \
+jq -r '.tarball_url' | \
+xargs -I{} curl -L -H "Authorization: token $GITHUB_FARMMODULES_TOKEN" -o /tmp/mycodo-latest.tar.gz {}
+
+sudo tar xzf /tmp/mycodo-latest.tar.gz -C /opt/Mycodo --strip-components=1
+sudo rm -f /tmp/mycodo-latest.tar.gz
+
+cd /opt/Mycodo/install
+sudo /bin/bash ./setup.sh
